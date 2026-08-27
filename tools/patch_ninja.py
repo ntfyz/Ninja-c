@@ -13,10 +13,12 @@ AUTOPLAY_UNAUTHORIZED_BRANCH_RVA = 0x37034
 
 # Original: b AutoPlay::StopForInvalidSession (0x368d8). That cleanup is reached
 # every frame after a match starts when the optional WASM payload is absent.
-# Replacement: b AutoPlay::Update epilogue (0x37160), which restores the full
-# frame normally and leaves gameplay running with autoplay disabled.
+# The instructions immediately before this branch already restore every saved
+# register and add 0xf0 back to SP. Replacement is therefore a direct ret;
+# branching to the shared epilogue would restore the frame a second time and
+# corrupt SP, causing intermittent EXC_BAD_ACCESS crashes.
 EXPECTED_AUTOPLAY_BRANCH = bytes.fromhex("29feff17")
-AUTOPLAY_NOOP_BRANCH = bytes.fromhex("4b000014")
+AUTOPLAY_NOOP_BRANCH = bytes.fromhex("c0035fd6")
 
 
 def patch_ninja(source: Path, output: Path) -> None:

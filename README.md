@@ -13,7 +13,7 @@ and its offline guard callback are changed:
 - the loader guard still loads Ninja normally, but its obsolete server-heartbeat failure
   callback is neutralized for the offline session;
 - the aggressive 1 ms Appdome thread-kill watchdog is disabled after the initial bypass;
-- a missing autoplay WASM module exits the match update cleanly instead of running
+- a missing autoplay WASM module returns from the match update cleanly instead of running
   invalid-session cleanup on every gameplay frame;
 - the original Appdome compatibility startup remains active.
 
@@ -31,7 +31,7 @@ the workflow. It:
    `0xd6d4`, recurring watchdog RVA `0xec10`, and Ninja match branch RVA `0x37034`;
 4. replaces only the two patched framework binaries;
 5. verifies the patch and uploads
-   `Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa`.
+   `Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa`.
 
 No certificate or provisioning profile is embedded. Sign/install the output using the
 signing setup already present on the target device.
@@ -50,7 +50,7 @@ python tools/patch_ipa_minimal.py \
   build/Ninja_8BallPool_v56.27.0.ipa \
   --loader-binary build/patched/loader \
   --ninja-binary build/patched/ninja \
-  --output dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa
+  --output dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
 ```
 
 The optional server and replacement-loader source remain in the repository for protocol

@@ -51,11 +51,11 @@ jobs:
             build/Ninja_8BallPool_v56.27.0.ipa \
             --loader-binary build/patched/loader \
             --ninja-binary build/patched/ninja \
-            --output dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa
+            --output dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
 
       - name: Verify package and patch bytes
         run: |
-          unzip -t dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa
+          unzip -t dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
           python3 - <<'PY'
           import zipfile
           from pathlib import Path
@@ -66,7 +66,7 @@ jobs:
           )
           from tools.patch_ninja import AUTOPLAY_NOOP_BRANCH, AUTOPLAY_UNAUTHORIZED_BRANCH_RVA
 
-          ipa = Path("dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa")
+          ipa = Path("dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa")
           with zipfile.ZipFile(ipa) as archive:
               loader_name = next(
                   n for n in archive.namelist()
@@ -85,15 +85,15 @@ jobs:
           assert ninja[AUTOPLAY_UNAUTHORIZED_BRANCH_RVA:AUTOPLAY_UNAUTHORIZED_BRANCH_RVA + 4] == AUTOPLAY_NOOP_BRANCH
           print(f"verified={loader_name},{ninja_name}")
           PY
-          sha256sum dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa | \
+          sha256sum dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa | \
             tee dist/SHA256SUMS.txt
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ninja-matchfix-offline-1-1-unsigned-ipa
+          name: Ninja-crashfix-offline-1-1-unsigned-ipa
           path: |
-            dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa
+            dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30

@@ -79,8 +79,9 @@ matches. The minimal patch preserves the complete original loader and changes on
   session, performs a retired-server heartbeat, and logs out.
 - `0xEC10`: stop the recurring 1 ms Appdome thread-kill watchdog while retaining the
   initial memory bypass, syscall hooks, early scans, and detection-state watcher.
-- Ninja `0x37034`: if the optional autoplay WASM module is absent, branch to the normal
-  `AutoPlay::Update()` epilogue instead of invalid-session cleanup every gameplay frame.
+- Ninja `0x37034`: after the existing epilogue has restored SP/registers, return directly
+  if the optional autoplay WASM module is absent instead of tail-calling invalid-session
+  cleanup. Do not branch to `0x37160`, because that would restore the stack twice.
 
 This retains the loader's original platform startup and Objective-C compatibility hooks.
 Replacing the complete loader removed those behaviors and caused the runtime protection
