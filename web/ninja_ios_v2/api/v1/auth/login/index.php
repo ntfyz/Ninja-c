@@ -7,7 +7,7 @@ if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 16384) ninja_json(413, ['ok' => fal
 
 try {
     $input = json_decode((string)file_get_contents('php://input'), true, 16, JSON_THROW_ON_ERROR);
-} catch (Throwable) {
+} catch (Throwable $ignored) {
     ninja_json(400, ['ok' => false, 'code' => 'malformed_request']);
 }
 $username = trim((string)($input['username'] ?? ''));
@@ -42,7 +42,7 @@ try {
         'remaining_seconds' => (int)$row['expires_at'] - $now,
         'generation' => $generation, 'device_id' => $hwid,
     ]);
-} catch (Throwable) {
+} catch (Throwable $ignored) {
     if ($db->inTransaction()) $db->rollBack();
     ninja_json(500, ['ok' => false, 'code' => 'server_error']);
 }

@@ -1,99 +1,64 @@
-name: Build minimal offline IPA
-
+name: Build guarded online-key IPA
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
       - name: Reassemble source IPA
         run: |
-          mkdir -p build/source build/patched dist
-          python3 tools/ipa_parts.py join \
-            input/Ninja_8BallPool_v56.27.0.ipa.parts.json \
-            build/Ninja_8BallPool_v56.27.0.ipa
-
-      - name: Extract and patch original framework binaries
-        run: |
+          mkdir -p build/source build/patched build/loader.framework build/guard.framework dist
+          python3 tools/ipa_parts.py join input/Ninja_8BallPool_v56.27.0.ipa.parts.json build/source.ipa
           python3 - <<'PY'
           import zipfile
           from pathlib import Path
-
-          ipa = Path("build/Ninja_8BallPool_v56.27.0.ipa")
-          with zipfile.ZipFile(ipa) as archive:
-              for framework in ("loader", "ninja"):
-                  names = [name for name in archive.namelist() if name.endswith(
-                      f".app/Frameworks/{framework}.framework/{framework}"
-                  )]
-                  if len(names) != 1:
-                      raise SystemExit(f"Expected one {framework} entry, found: {names}")
-                  Path(f"build/source/{framework}").write_bytes(archive.read(names[0]))
+          with zipfile.ZipFile('build/source.ipa') as z:
+              for fw in ('loader','ninja'):
+                  names=[n for n in z.namelist() if n.endswith(f'.app/Frameworks/{fw}.framework/{fw}')]
+                  assert len(names)==1,names
+                  Path(f'build/source/{fw}').write_bytes(z.read(names[0]))
           PY
-          python3 tools/patch_loader.py \
-            build/source/loader \
-            build/patched/loader
-          python3 tools/patch_ninja.py \
-            build/source/ninja \
-            build/patched/ninja
-
-      - name: Repack only the patched framework binaries
+      - name: Preserve original protection guard
         run: |
-          python3 tools/patch_ipa_minimal.py \
-            build/Ninja_8BallPool_v56.27.0.ipa \
-            --loader-binary build/patched/loader \
+          python3 tools/patch_loader.py build/source/loader build/guard.framework/guard
+          install_name_tool -id @rpath/guard.framework/guard build/guard.framework/guard
+          cp ios/GuardInfo.plist build/guard.framework/Info.plist
+          chmod 755 build/guard.framework/guard
+          otool -D build/guard.framework/guard
+      - name: Build online auth loader
+        run: |
+          xcrun --sdk iphoneos clang++ -arch arm64 -std=c++17 -dynamiclib -fobjc-arc -fblocks \
+            -miphoneos-version-min=13.0 \
+            '-DLOCAL_AUTH_URL="https://test.ntfyz.xyz/ninja_ios_v2/api/v1/auth/login/"' \
+            -install_name @rpath/loader.framework/loader \
+            -framework Foundation -framework Security ios/loader.mm -o build/loader.framework/loader
+          cp ios/Info.plist build/loader.framework/Info.plist
+          chmod 755 build/loader.framework/loader
+          nm -gU build/loader.framework/loader | grep -E '_ninja_loader_(login|device_id|session_valid|logout)$'
+      - name: Patch Ninja and repack
+        run: |
+          python3 tools/patch_ninja.py build/source/ninja build/patched/ninja
+          python3 tools/repack_hybrid_ipa.py build/source.ipa \
+            --loader-binary build/loader.framework/loader --loader-plist ios/Info.plist \
+            --guard-binary build/guard.framework/guard --guard-plist ios/GuardInfo.plist \
             --ninja-binary build/patched/ninja \
-            --output dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
-
-      - name: Verify package and patch bytes
+            --output dist/Ninja_8BallPool_v56.27.0_webkey_guarded_unsigned.ipa
+      - name: Verify unsigned IPA
         run: |
-          unzip -t dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
-          python3 - <<'PY'
-          import zipfile
-          from pathlib import Path
-          from tools.patch_loader import (
-              APPDOME_WATCHDOG_PATCH, APPDOME_WATCHDOG_RVA,
-              GUARD_FAILED_PATCH, GUARD_FAILED_RVA, LOGIN_PATCH, LOGIN_RVA,
-              SESSION_VALID_PATCH, SESSION_VALID_RVA,
-          )
-          from tools.patch_ninja import AUTOPLAY_NOOP_BRANCH, AUTOPLAY_UNAUTHORIZED_BRANCH_RVA
-
-          ipa = Path("dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa")
-          with zipfile.ZipFile(ipa) as archive:
-              loader_name = next(
-                  n for n in archive.namelist()
-                  if n.endswith(".app/Frameworks/loader.framework/loader")
-              )
-              ninja_name = next(
-                  n for n in archive.namelist()
-                  if n.endswith(".app/Frameworks/ninja.framework/ninja")
-              )
-              loader = archive.read(loader_name)
-              ninja = archive.read(ninja_name)
-          assert loader[LOGIN_RVA:LOGIN_RVA + len(LOGIN_PATCH)] == LOGIN_PATCH
-          assert loader[SESSION_VALID_RVA:SESSION_VALID_RVA + len(SESSION_VALID_PATCH)] == SESSION_VALID_PATCH
-          assert loader[GUARD_FAILED_RVA:GUARD_FAILED_RVA + len(GUARD_FAILED_PATCH)] == GUARD_FAILED_PATCH
-          assert loader[APPDOME_WATCHDOG_RVA:APPDOME_WATCHDOG_RVA + len(APPDOME_WATCHDOG_PATCH)] == APPDOME_WATCHDOG_PATCH
-          assert ninja[AUTOPLAY_UNAUTHORIZED_BRANCH_RVA:AUTOPLAY_UNAUTHORIZED_BRANCH_RVA + 4] == AUTOPLAY_NOOP_BRANCH
-          print(f"verified={loader_name},{ninja_name}")
-          PY
-          sha256sum dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa | \
-            tee dist/SHA256SUMS.txt
-
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+          unzip -t dist/Ninja_8BallPool_v56.27.0_webkey_guarded_unsigned.ipa
+          unzip -l dist/Ninja_8BallPool_v56.27.0_webkey_guarded_unsigned.ipa | grep -E 'Frameworks/(loader|guard|ninja).framework/(loader|guard|ninja)'
+          shasum -a 256 dist/Ninja_8BallPool_v56.27.0_webkey_guarded_unsigned.ipa | tee dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
         with:
-          name: Ninja-crashfix-offline-1-1-unsigned-ipa
+          name: Ninja-webkey-guarded-unsigned-ipa
           path: |
-            dist/Ninja_8BallPool_v56.27.0_crashfix_offline_1-1_unsigned.ipa
+            dist/Ninja_8BallPool_v56.27.0_webkey_guarded_unsigned.ipa
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30

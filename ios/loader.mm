@@ -8,7 +8,7 @@
 #include <dlfcn.h>
 
 #ifndef LOCAL_AUTH_URL
-#define LOCAL_AUTH_URL "http://127.0.0.1:8880/ninja_ios_v2/api/v1/auth/login"
+#define LOCAL_AUTH_URL "https://test.ntfyz.xyz/ninja_ios_v2/api/v1/auth/login/"
 #endif
 
 namespace {
@@ -30,6 +30,7 @@ std::atomic<uint64_t> g_generation_counter{1};
 std::atomic<uint64_t> g_active_generation{0};
 std::atomic<InvalidationCallback> g_invalidation_callback{nullptr};
 void *g_ninja_handle = nullptr;
+void *g_guard_handle = nullptr;
 
 NSString *const kDeviceAccount = @"ninja.local.device-id";
 NSString *const kCredentialAccount = @"ninja.local.credentials";
@@ -260,27 +261,6 @@ extern "C" void ninja_loader_login(const char *username_utf8, const char *passwo
             return;
         }
 
-        // ESign installs do not provide a service on the iPhone loopback interface.
-        // Keep a deterministic offline account that does not depend on network or HWID.
-        if ([username isEqualToString:@"1"] && [password isEqualToString:@"1"]) {
-            const int64_t now = (int64_t)[NSDate date].timeIntervalSince1970;
-            const int64_t expires_at = now + (int64_t)10 * 365 * 86400;
-            uint64_t generation = g_generation_counter.fetch_add(1);
-            if (generation == 0) {
-                generation = g_generation_counter.fetch_add(1);
-            }
-            g_session_expires_at.store(expires_at);
-            g_active_generation.store(generation);
-            g_session_valid.store(true);
-            SaveCredentials(username, password);
-            result->success = 1;
-            result->expires_at = expires_at;
-            result->remaining_seconds = expires_at - now;
-            result->generation = generation;
-            CopyMessage(result->message, @"ok");
-            return;
-        }
-
         uint32_t device_status = 0;
         NSString *device_id = DeviceIdentifier(&device_status);
         if (!device_id.length) {
@@ -366,19 +346,11 @@ extern "C" void ninja_autoplay_module_reset() {}
 
 namespace {
 
-void StartNinja(void *) {
+void StartOriginalGuard() {
     @autoreleasepool {
         NSString *path = [[[NSBundle mainBundle] bundlePath]
-            stringByAppendingPathComponent:@"Frameworks/ninja.framework/ninja"];
-        g_ninja_handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
-        if (!g_ninja_handle) {
-            return;
-        }
-        using StartFunction = void (*)();
-        StartFunction start = reinterpret_cast<StartFunction>(dlsym(g_ninja_handle, "ninja_payload_start"));
-        if (start) {
-            start();
-        }
+            stringByAppendingPathComponent:@"Frameworks/guard.framework/guard"];
+        g_guard_handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
     }
 }
 
@@ -403,9 +375,10 @@ void RestoreSession(void *) {
 }
 
 __attribute__((constructor)) void LoaderEntry() {
+    // The original loader supplies the Appdome compatibility startup and loads Ninja.
+    // Keep it intact under a distinct Mach-O install name; this framework only owns auth.
+    StartOriginalGuard();
     dispatch_async_f(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), nullptr, RestoreSession);
-    dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1200 * NSEC_PER_MSEC)),
-                     dispatch_get_main_queue(), nullptr, StartNinja);
 }
 
 }  // namespace

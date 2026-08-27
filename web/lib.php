@@ -35,7 +35,7 @@ function ninja_db(): PDO {
     return $db;
 }
 
-function ninja_json(int $status, array $payload): never {
+function ninja_json(int $status, array $payload): void {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');

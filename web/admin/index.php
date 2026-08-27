@@ -5,7 +5,8 @@ ninja_start_admin_session();
 $config = ninja_config();
 $error = '';
 if (isset($_POST['login'])) {
-    if (password_verify((string)($_POST['password'] ?? ''), (string)$config['admin_password_hash'])) {
+    $candidate = hash('sha256', (string)($_POST['password'] ?? ''));
+    if (hash_equals((string)$config['admin_password_sha256'], $candidate)) {
         session_regenerate_id(true); $_SESSION['admin'] = true; header('Location: ./'); exit;
     }
     $error = 'Sai mật khẩu quản trị.';
