@@ -1,0 +1,32 @@
+{
+  "filename": "Ninja_8BallPool_v56.27.0.ipa",
+  "size": 102583647,
+  "sha256": "53c9a32028fae0ae6492a64d7a7b038a933d23c29eced8582da4e71724f563b8",
+  "parts": [
+    {
+      "name": "Ninja_8BallPool_v56.27.0.ipa.part000",
+      "size": 25165824,
+      "sha256": "edbb5735a78391a5d3f7b7387653d6ff5095c280b2d6993a790f7fc1bd483c0f"
+    },
+    {
+      "name": "Ninja_8BallPool_v56.27.0.ipa.part001",
+      "size": 25165824,
+      "sha256": "39e1a72096b5b496ca150413fd20a3ce89084da9b81247bbcf1ec2973d6e02f8"
+    },
+    {
+      "name": "Ninja_8BallPool_v56.27.0.ipa.part002",
+      "size": 25165824,
+      "sha256": "524cb60d2f3c0dd18e09141e04a803453b2f73d4b6a8de46add7cb0258402497"
+    },
+    {
+      "name": "Ninja_8BallPool_v56.27.0.ipa.part003",
+      "size": 25165824,
+      "sha256": "47557152bdc5fc9094a2bf73634a9cccbbcdbbb444ccba6432727231222f7094"
+    },
+    {
+      "name": "Ninja_8BallPool_v56.27.0.ipa.part004",
+      "size": 1920351,
+      "sha256": "6e5a7361ffe3b30808db128bef26e72b097571b7afbaff2c397f8ddcafb4831b"
+    }
+  ]
+}

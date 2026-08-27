@@ -1,0 +1,81 @@
+name: Build unsigned localhost IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      auth_url:
+        description: Local auth endpoint compiled into loader.framework
+        required: true
+        default: http://127.0.0.1:8880/ninja_ios_v2/api/v1/auth/login
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reassemble source IPA
+        run: |
+          mkdir -p build dist
+          python3 tools/ipa_parts.py join \
+            input/Ninja_8BallPool_v56.27.0.ipa.parts.json \
+            build/Ninja_8BallPool_v56.27.0.ipa
+
+      - name: Build ARM64 loader.framework
+        env:
+          AUTH_URL: ${{ inputs.auth_url || 'http://127.0.0.1:8880/ninja_ios_v2/api/v1/auth/login' }}
+        run: |
+          mkdir -p build/loader.framework
+          xcrun --sdk iphoneos clang++ \
+            -arch arm64 \
+            -std=c++17 \
+            -dynamiclib \
+            -fobjc-arc \
+            -fblocks \
+            -miphoneos-version-min=13.0 \
+            "-DLOCAL_AUTH_URL=\"${AUTH_URL}\"" \
+            -install_name @executable_path/Frameworks/loader.framework/loader \
+            -current_version 1.0.0 \
+            -compatibility_version 1.0.0 \
+            -framework Foundation \
+            -framework Security \
+            ios/loader.mm \
+            -o build/loader.framework/loader
+          cp ios/Info.plist build/loader.framework/Info.plist
+          chmod 755 build/loader.framework/loader
+          lipo -info build/loader.framework/loader
+          otool -L build/loader.framework/loader
+          nm -gU build/loader.framework/loader | grep -E \
+            '_ninja_loader_(login|device_id|session_valid|logout|set_invalidation_callback)$'
+
+      - name: Repack unsigned IPA
+        run: |
+          python3 tools/repack_ipa.py \
+            build/Ninja_8BallPool_v56.27.0.ipa \
+            --loader-binary build/loader.framework/loader \
+            --loader-plist build/loader.framework/Info.plist \
+            --output dist/Ninja_8BallPool_v56.27.0_localhost_unsigned.ipa
+
+      - name: Verify package
+        run: |
+          unzip -t dist/Ninja_8BallPool_v56.27.0_localhost_unsigned.ipa
+          unzip -l dist/Ninja_8BallPool_v56.27.0_localhost_unsigned.ipa | \
+            grep 'Frameworks/loader.framework/loader'
+          shasum -a 256 dist/Ninja_8BallPool_v56.27.0_localhost_unsigned.ipa | \
+            tee dist/SHA256SUMS.txt
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ninja-localhost-unsigned-ipa
+          path: |
+            dist/Ninja_8BallPool_v56.27.0_localhost_unsigned.ipa
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
