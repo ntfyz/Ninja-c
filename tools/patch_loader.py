@@ -12,6 +12,7 @@ EXPECTED_SHA256 = "5f5d25197a2461a3441b5be54584102f55e8d436b8ecf90d838a19160ecea
 LOGIN_RVA = 0x845C
 SESSION_VALID_RVA = 0x8700
 GUARD_FAILED_RVA = 0xD6D4
+APPDOME_WATCHDOG_RVA = 0xEC10
 
 # ninja_loader_login(username, password, result): zero the 96-byte result,
 # accept exactly "1" / "1", set a coherent offline expiry/generation both in
@@ -35,6 +36,13 @@ SESSION_VALID_PATCH = bytes.fromhex("20008052c0035fd6")
 # a no-op so a native-guard report cannot block the frame loop on old network IO.
 GUARD_FAILED_PATCH = bytes.fromhex("c0035fd6")  # ret
 
+# Platform startup already applies the Appdome memory patch, installs signal/
+# syscall hooks, runs several early one-shot scans, and starts detection_watcher.
+# This additional worker sleeps for only 1 ms and repeatedly rewrites matching
+# thread PCs after its first 1000 iterations. On this build it can eventually
+# classify a live game/Ninja worker as a protection thread and freeze the app.
+APPDOME_WATCHDOG_PATCH = bytes.fromhex("00008052c0035fd6")  # mov w0, #0; ret
+
 # Guards make applying the patch to a different loader fail closed.
 EXPECTED_LOGIN_PREFIX = bytes.fromhex(
     "ff0303d1fa6707a9f85f08a9f65709a9f44f0aa9fd7b0ba9"
@@ -42,6 +50,7 @@ EXPECTED_LOGIN_PREFIX = bytes.fromhex(
 )
 EXPECTED_SESSION_PREFIX = bytes.fromhex("ff8300d1fd7b01a9")
 EXPECTED_GUARD_FAILED_PREFIX = bytes.fromhex("ffc300d1f44f01a9")
+EXPECTED_APPDOME_WATCHDOG_PREFIX = bytes.fromhex("ffc301d1f85f03a9")
 
 
 def sha256(data: bytes) -> str:
@@ -68,11 +77,22 @@ def patch_loader(source: Path, output: Path) -> None:
         != EXPECTED_GUARD_FAILED_PREFIX
     ):
         raise SystemExit("Guard-failure callback prefix does not match the analyzed ARM64 build")
+    if (
+        original[
+            APPDOME_WATCHDOG_RVA : APPDOME_WATCHDOG_RVA
+            + len(EXPECTED_APPDOME_WATCHDOG_PREFIX)
+        ]
+        != EXPECTED_APPDOME_WATCHDOG_PREFIX
+    ):
+        raise SystemExit("Appdome watchdog prefix does not match the analyzed ARM64 build")
 
     patched = bytearray(original)
     patched[LOGIN_RVA : LOGIN_RVA + len(LOGIN_PATCH)] = LOGIN_PATCH
     patched[SESSION_VALID_RVA : SESSION_VALID_RVA + len(SESSION_VALID_PATCH)] = SESSION_VALID_PATCH
     patched[GUARD_FAILED_RVA : GUARD_FAILED_RVA + len(GUARD_FAILED_PATCH)] = GUARD_FAILED_PATCH
+    patched[
+        APPDOME_WATCHDOG_RVA : APPDOME_WATCHDOG_RVA + len(APPDOME_WATCHDOG_PATCH)
+    ] = APPDOME_WATCHDOG_PATCH
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(patched)

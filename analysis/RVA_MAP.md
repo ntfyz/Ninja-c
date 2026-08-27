@@ -77,6 +77,8 @@ matches. The minimal patch preserves the complete original loader and changes on
 - `0x8700`: return a valid session.
 - `0xD6D4`: neutralize the guard-failure callback that otherwise invalidates the offline
   session, performs a retired-server heartbeat, and logs out.
+- `0xEC10`: stop the recurring 1 ms Appdome thread-kill watchdog while retaining the
+  initial memory bypass, syscall hooks, early scans, and detection-state watcher.
 
 This retains the loader's original platform startup and Objective-C compatibility hooks.
 Replacing the complete loader removed those behaviors and caused the runtime protection

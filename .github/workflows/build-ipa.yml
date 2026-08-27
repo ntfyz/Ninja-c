@@ -47,20 +47,21 @@ jobs:
           python3 tools/patch_ipa_minimal.py \
             build/Ninja_8BallPool_v56.27.0.ipa \
             --loader-binary build/patched/loader \
-            --output dist/Ninja_8BallPool_v56.27.0_stable_offline_1-1_unsigned.ipa
+            --output dist/Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa
 
       - name: Verify package and patch bytes
         run: |
-          unzip -t dist/Ninja_8BallPool_v56.27.0_stable_offline_1-1_unsigned.ipa
+          unzip -t dist/Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa
           python3 - <<'PY'
           import zipfile
           from pathlib import Path
           from tools.patch_loader import (
+              APPDOME_WATCHDOG_PATCH, APPDOME_WATCHDOG_RVA,
               GUARD_FAILED_PATCH, GUARD_FAILED_RVA, LOGIN_PATCH, LOGIN_RVA,
               SESSION_VALID_PATCH, SESSION_VALID_RVA,
           )
 
-          ipa = Path("dist/Ninja_8BallPool_v56.27.0_stable_offline_1-1_unsigned.ipa")
+          ipa = Path("dist/Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa")
           with zipfile.ZipFile(ipa) as archive:
               name = next(
                   n for n in archive.namelist()
@@ -70,17 +71,18 @@ jobs:
           assert loader[LOGIN_RVA:LOGIN_RVA + len(LOGIN_PATCH)] == LOGIN_PATCH
           assert loader[SESSION_VALID_RVA:SESSION_VALID_RVA + len(SESSION_VALID_PATCH)] == SESSION_VALID_PATCH
           assert loader[GUARD_FAILED_RVA:GUARD_FAILED_RVA + len(GUARD_FAILED_PATCH)] == GUARD_FAILED_PATCH
+          assert loader[APPDOME_WATCHDOG_RVA:APPDOME_WATCHDOG_RVA + len(APPDOME_WATCHDOG_PATCH)] == APPDOME_WATCHDOG_PATCH
           print(f"verified={name}")
           PY
-          sha256sum dist/Ninja_8BallPool_v56.27.0_stable_offline_1-1_unsigned.ipa | \
+          sha256sum dist/Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa | \
             tee dist/SHA256SUMS.txt
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ninja-stable-offline-1-1-unsigned-ipa
+          name: Ninja-nofreeze-offline-1-1-unsigned-ipa
           path: |
-            dist/Ninja_8BallPool_v56.27.0_stable_offline_1-1_unsigned.ipa
+            dist/Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
