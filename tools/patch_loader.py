@@ -11,19 +11,29 @@ from pathlib import Path
 EXPECTED_SHA256 = "5f5d25197a2461a3441b5be54584102f55e8d436b8ecf90d838a19160eceaa1a"
 LOGIN_RVA = 0x845C
 SESSION_VALID_RVA = 0x8700
+GUARD_FAILED_RVA = 0xD6D4
 
 # ninja_loader_login(username, password, result): zero the 96-byte result,
-# accept exactly "1" / "1", then set success=1, generation=1, message="ok".
+# accept exactly "1" / "1", set a coherent offline expiry/generation both in
+# the result and in the loader's security globals, then return message="ok".
 LOGIN_PATCH = bytes.fromhex(
-    "e90302aa490300b43f7d00a93f7d01a93f7d02a93f7d03a9"
-    "3f7d04a93f7d05a9600200b4410200b40a0040395fc50071"
-    "e10100540a044039aa0100352a0040395fc5007141010054"
-    "2a0440390a0100352a0080522a0100b92a0080d22a0d00f9"
+    "e90302aac90400b43f7d00a93f7d01a93f7d02a93f7d03a9"
+    "3f7d04a93f7d05a9e00300b4c10300b40a0040395fc50071"
+    "610300540a0440392a0300352a0040395fc50071c1020054"
+    "2a0440398a0200352a0080522a0100b9eaff9f52eaffaf72"
+    "2a0500f92a0900f92a0080d22a0d00f90b1a00906be12d91"
+    "6a0100f9eaff9f52eaffaf726a0500f92a0080526a410039"
     "ea6d8d522a4100793f890039c0035fd6"
 )
 
 # mov w0, #1; ret
 SESSION_VALID_PATCH = bytes.fromhex("20008052c0035fd6")
+
+# Keep gdl_guard_start because it also orchestrates loading ninja.framework.
+# Its failure callback normally invalidates the module, sends a heartbeat to
+# the retired server, and logs out. For the coherent offline session it must be
+# a no-op so a native-guard report cannot block the frame loop on old network IO.
+GUARD_FAILED_PATCH = bytes.fromhex("c0035fd6")  # ret
 
 # Guards make applying the patch to a different loader fail closed.
 EXPECTED_LOGIN_PREFIX = bytes.fromhex(
@@ -31,6 +41,7 @@ EXPECTED_LOGIN_PREFIX = bytes.fromhex(
     "fdc30291e8190090086140f9080140f9a8831bf8420c00b4"
 )
 EXPECTED_SESSION_PREFIX = bytes.fromhex("ff8300d1fd7b01a9")
+EXPECTED_GUARD_FAILED_PREFIX = bytes.fromhex("ffc300d1f44f01a9")
 
 
 def sha256(data: bytes) -> str:
@@ -52,10 +63,16 @@ def patch_loader(source: Path, output: Path) -> None:
         != EXPECTED_SESSION_PREFIX
     ):
         raise SystemExit("Session-valid function prefix does not match the analyzed ARM64 build")
+    if (
+        original[GUARD_FAILED_RVA : GUARD_FAILED_RVA + len(EXPECTED_GUARD_FAILED_PREFIX)]
+        != EXPECTED_GUARD_FAILED_PREFIX
+    ):
+        raise SystemExit("Guard-failure callback prefix does not match the analyzed ARM64 build")
 
     patched = bytearray(original)
     patched[LOGIN_RVA : LOGIN_RVA + len(LOGIN_PATCH)] = LOGIN_PATCH
     patched[SESSION_VALID_RVA : SESSION_VALID_RVA + len(SESSION_VALID_PATCH)] = SESSION_VALID_PATCH
+    patched[GUARD_FAILED_RVA : GUARD_FAILED_RVA + len(GUARD_FAILED_PATCH)] = GUARD_FAILED_PATCH
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(patched)

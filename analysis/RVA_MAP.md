@@ -72,8 +72,11 @@ Ninja copies the three 64-bit fields, stores the generation in `g_active_generat
 calls `ninja_loader_session_valid`, and accepts the result only when the generation still
 matches. The minimal patch preserves the complete original loader and changes only:
 
-- `0x845C`: zero the result, accept exactly `1` / `1`, set success and generation to 1;
+- `0x845C`: zero the result, accept exactly `1` / `1`, and initialize coherent offline
+  generation/expiry state;
 - `0x8700`: return a valid session.
+- `0xD6D4`: neutralize the guard-failure callback that otherwise invalidates the offline
+  session, performs a retired-server heartbeat, and logs out.
 
 This retains the loader's original platform startup and Objective-C compatibility hooks.
 Replacing the complete loader removed those behaviors and caused the runtime protection
