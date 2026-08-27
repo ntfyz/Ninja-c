@@ -29,8 +29,6 @@ std::atomic<int64_t> g_session_expires_at{0};
 std::atomic<uint64_t> g_generation_counter{1};
 std::atomic<uint64_t> g_active_generation{0};
 std::atomic<InvalidationCallback> g_invalidation_callback{nullptr};
-void *g_ninja_handle = nullptr;
-void *g_guard_handle = nullptr;
 
 NSString *const kDeviceAccount = @"ninja.local.device-id";
 NSString *const kCredentialAccount = @"ninja.local.credentials";
@@ -346,14 +344,6 @@ extern "C" void ninja_autoplay_module_reset() {}
 
 namespace {
 
-void StartOriginalGuard() {
-    @autoreleasepool {
-        NSString *path = [[[NSBundle mainBundle] bundlePath]
-            stringByAppendingPathComponent:@"Frameworks/guard.framework/guard"];
-        g_guard_handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
-    }
-}
-
 void RestoreSession(void *) {
     @autoreleasepool {
         NSData *data = KeychainRead(kCredentialAccount);
@@ -375,9 +365,8 @@ void RestoreSession(void *) {
 }
 
 __attribute__((constructor)) void LoaderEntry() {
-    // The original loader supplies the Appdome compatibility startup and loads Ninja.
-    // Keep it intact under a distinct Mach-O install name; this framework only owns auth.
-    StartOriginalGuard();
+    // guard.framework is a Mach-O dependency, so dyld runs its original Appdome
+    // compatibility constructor before this online-auth constructor.
     dispatch_async_f(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), nullptr, RestoreSession);
 }
 
