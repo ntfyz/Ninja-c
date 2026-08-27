@@ -260,6 +260,27 @@ extern "C" void ninja_loader_login(const char *username_utf8, const char *passwo
             return;
         }
 
+        // ESign installs do not provide a service on the iPhone loopback interface.
+        // Keep a deterministic offline account that does not depend on network or HWID.
+        if ([username isEqualToString:@"1"] && [password isEqualToString:@"1"]) {
+            const int64_t now = (int64_t)[NSDate date].timeIntervalSince1970;
+            const int64_t expires_at = now + (int64_t)10 * 365 * 86400;
+            uint64_t generation = g_generation_counter.fetch_add(1);
+            if (generation == 0) {
+                generation = g_generation_counter.fetch_add(1);
+            }
+            g_session_expires_at.store(expires_at);
+            g_active_generation.store(generation);
+            g_session_valid.store(true);
+            SaveCredentials(username, password);
+            result->success = 1;
+            result->expires_at = expires_at;
+            result->remaining_seconds = expires_at - now;
+            result->generation = generation;
+            CopyMessage(result->message, @"ok");
+            return;
+        }
+
         uint32_t device_status = 0;
         NSString *device_id = DeviceIdentifier(&device_status);
         if (!device_id.length) {

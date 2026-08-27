@@ -70,7 +70,9 @@ The C result buffer used at `ninja_loader_login` is 96 bytes:
 
 The rebuilt loader preserves that layout. Ninja copies the three 64-bit fields, stores
 the generation in `g_active_generation`, calls `ninja_loader_session_valid`, and accepts
-the result only when the generation still matches.
+the result only when the generation still matches. The standalone rebuild accepts the
+offline credential pair `1` / `1`; other credentials continue through the optional local
+SQLite service.
 
 ## Autoplay payload check
 

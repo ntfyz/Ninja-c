@@ -13,7 +13,12 @@ the ABI used by the Ninja login screen:
 - saved credentials for automatic session restoration;
 - local SQLite commands to create/delete/enable/disable keys and set/clear HWIDs.
 
-## Local key server
+For a standalone ESign install, use `1` for both Username and Password. This account is
+validated inside the rebuilt loader and does not require a localhost process on the
+iPhone or an HWID check. Its session is saved in the Keychain when Keychain access is
+available and restored on later launches.
+
+## Optional local key server
 
 Create a key. When `--password` is omitted, enter the generated key in both the Username
 and Password fields in the Ninja login form.
