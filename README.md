@@ -13,6 +13,8 @@ and its offline guard callback are changed:
 - the loader guard still loads Ninja normally, but its obsolete server-heartbeat failure
   callback is neutralized for the offline session;
 - the aggressive 1 ms Appdome thread-kill watchdog is disabled after the initial bypass;
+- a missing autoplay WASM module exits the match update cleanly instead of running
+  invalid-session cleanup on every gameplay frame;
 - the original Appdome compatibility startup remains active.
 
 This avoids localhost networking and preserves the compatibility behavior in the
@@ -24,12 +26,12 @@ The source IPA is split into Git-friendly parts under `input/`. A push to `main`
 the workflow. It:
 
 1. verifies and joins the IPA parts;
-2. verifies the SHA-256 of the original loader;
-3. patches login RVA `0x845c`, session RVA `0x8700`, guard-failure callback RVA `0xd6d4`,
-   and recurring thread-kill watchdog RVA `0xec10`;
-4. replaces only `Payload/pool.app/Frameworks/loader.framework/loader`;
+2. verifies the SHA-256 of the original loader and Ninja binaries;
+3. patches loader login RVA `0x845c`, session RVA `0x8700`, guard-failure callback RVA
+   `0xd6d4`, recurring watchdog RVA `0xec10`, and Ninja match branch RVA `0x37034`;
+4. replaces only the two patched framework binaries;
 5. verifies the patch and uploads
-   `Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa`.
+   `Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa`.
 
 No certificate or provisioning profile is embedded. Sign/install the output using the
 signing setup already present on the target device.
@@ -41,11 +43,14 @@ python tools/ipa_parts.py join \
   input/Ninja_8BallPool_v56.27.0.ipa.parts.json \
   build/Ninja_8BallPool_v56.27.0.ipa
 # Extract Payload/pool.app/Frameworks/loader.framework/loader to build/source/loader.
+# Extract Payload/pool.app/Frameworks/ninja.framework/ninja to build/source/ninja.
 python tools/patch_loader.py build/source/loader build/patched/loader
+python tools/patch_ninja.py build/source/ninja build/patched/ninja
 python tools/patch_ipa_minimal.py \
   build/Ninja_8BallPool_v56.27.0.ipa \
   --loader-binary build/patched/loader \
-  --output dist/Ninja_8BallPool_v56.27.0_nofreeze_offline_1-1_unsigned.ipa
+  --ninja-binary build/patched/ninja \
+  --output dist/Ninja_8BallPool_v56.27.0_matchfix_offline_1-1_unsigned.ipa
 ```
 
 The optional server and replacement-loader source remain in the repository for protocol
