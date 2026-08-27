@@ -1,0 +1,8 @@
+Options -Indexes
+RewriteEngine On
+RewriteRule ^config\.php$ - [F,L]
+RewriteRule ^lib\.php$ - [F,L]
+
+<FilesMatch "\.(sqlite3?|db|log)$">
+  Require all denied
+</FilesMatch>
