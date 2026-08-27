@@ -37,12 +37,20 @@ jobs:
             -miphoneos-version-min=13.0 \
             '-DLOCAL_AUTH_URL="https://test.ntfyz.xyz/ninja_ios_v2/api/v1/auth/login/"' \
             -install_name @rpath/loader.framework/loader \
-            -Wl,-reexport_library,build/guard.framework/guard \
+            -Wl,-needed_library,build/guard.framework/guard \
             -framework Foundation -framework Security ios/loader.mm -o build/loader.framework/loader
           cp ios/Info.plist build/loader.framework/Info.plist
           chmod 755 build/loader.framework/loader
           nm -gU build/loader.framework/loader | grep -E '_ninja_loader_(login|device_id|session_valid|logout)$'
           otool -L build/loader.framework/loader | grep '@rpath/guard.framework/guard'
+          python3 - <<'PY'
+          import subprocess
+          text=subprocess.check_output(['otool','-l','build/loader.framework/loader'],text=True)
+          marker='name @rpath/guard.framework/guard'
+          pos=text.index(marker); block=text[text.rfind('cmd ',0,pos):pos]
+          assert 'LC_LOAD_DYLIB' in block and 'LC_REEXPORT_DYLIB' not in block, block
+          print('guard_dependency=LC_LOAD_DYLIB')
+          PY
       - name: Patch Ninja and repack
         run: |
           python3 tools/patch_ninja.py build/source/ninja build/patched/ninja
@@ -50,17 +58,17 @@ jobs:
             --loader-binary build/loader.framework/loader --loader-plist ios/Info.plist \
             --guard-binary build/guard.framework/guard --guard-plist ios/GuardInfo.plist \
             --ninja-binary build/patched/ninja \
-            --output dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v2_unsigned.ipa
+            --output dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v3_unsigned.ipa
       - name: Verify unsigned IPA
         run: |
-          unzip -t dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v2_unsigned.ipa
-          unzip -l dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v2_unsigned.ipa | grep -E 'Frameworks/(loader|guard|ninja).framework/(loader|guard|ninja)'
-          shasum -a 256 dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v2_unsigned.ipa | tee dist/SHA256SUMS.txt
+          unzip -t dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v3_unsigned.ipa
+          unzip -l dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v3_unsigned.ipa | grep -E 'Frameworks/(loader|guard|ninja).framework/(loader|guard|ninja)'
+          shasum -a 256 dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v3_unsigned.ipa | tee dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Ninja-webkey-guarded-v2-unsigned-ipa
+          name: Ninja-webkey-guarded-v3-unsigned-ipa
           path: |
-            dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v2_unsigned.ipa
+            dist/Ninja_8BallPool_v56.27.0_webkey_guarded_v3_unsigned.ipa
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
