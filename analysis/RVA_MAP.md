@@ -55,7 +55,7 @@ A successful response must contain `ok=true`, `scope="authenticated"`, `expires_
 validates/decrypts a delivery envelope, installs the downloaded WASM module, starts an
 integrity watcher, and only then returns a non-zero login generation.
 
-## Rebuilt ABI
+## Login result ABI and minimal patch
 
 The C result buffer used at `ninja_loader_login` is 96 bytes:
 
@@ -68,15 +68,20 @@ The C result buffer used at `ninja_loader_login` is 96 bytes:
 | `0x18` | 8 | non-zero session generation |
 | `0x20` | 64 | NUL-terminated status/error code |
 
-The rebuilt loader preserves that layout. Ninja copies the three 64-bit fields, stores
-the generation in `g_active_generation`, calls `ninja_loader_session_valid`, and accepts
-the result only when the generation still matches. The standalone rebuild accepts the
-offline credential pair `1` / `1`; other credentials continue through the optional local
-SQLite service.
+Ninja copies the three 64-bit fields, stores the generation in `g_active_generation`,
+calls `ninja_loader_session_valid`, and accepts the result only when the generation still
+matches. The minimal patch preserves the complete original loader and changes only:
+
+- `0x845C`: zero the result, accept exactly `1` / `1`, set success and generation to 1;
+- `0x8700`: return a valid session.
+
+This retains the loader's original platform startup and Objective-C compatibility hooks.
+Replacing the complete loader removed those behaviors and caused the runtime protection
+event `REF 6960` (`MethodSwizzlingDetected`) before the Ninja login screen initialized.
 
 ## Autoplay payload check
 
 `loader.framework` contains WAMR and the constants `\0asm\x01\0\0\0` at file offsets
 `0x566EA` and `0x566F2`, but no complete embedded WASM module. No `.wasm` or downloaded
-module file exists anywhere in the app bundle. The source rebuild therefore does not
-claim to reconstruct the missing planner payload.
+module file exists anywhere in the app bundle. The minimal login patch therefore does
+not claim to reconstruct the missing planner payload.
