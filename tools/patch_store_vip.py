@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Patch the supplied CheatiOSShare IPA for default key 1, direct menu access,
-four game cards, and offline feature authorization.
+"""Patch the supplied CheatiOSShare IPA to use api.ntfyz.xyz KeyAuth,
+prefill key 1, retain four game cards, and keep feature access compatible.
 
-v1.5 changes vs v1.4:
-  - Return true directly from async PatchHubService.verifyAccess so opening
-    a game/tool no longer fails after the UI-level license gate was bypassed.
+v1.6 changes vs v1.5:
+  - Restore the real LicenseGateStore bootstrap/revalidation and key changing.
+  - Route the shared API base URL to https://api.ntfyz.xyz.
+  - Keep response compatibility and the secondary feature-access compatibility
+    patch while primary key activation/status is validated by the cPanel API.
 """
 
 from __future__ import annotations
@@ -21,10 +23,10 @@ from pathlib import Path
 
 EXPECTED_IPA_SHA256 = "127f911509b2dc441f78b250603838bbf7d15cdc3861d971352314e169a13c84"
 EXPECTED_BINARY_SHA256 = "8469ae1a34db849c5252f504cfa66322bacd303b861e2b42089526941548e909"
-EXPECTED_PATCHED_BINARY_SHA256 = "1066e6b49c40fb832754577db8aacc60b1117244f60979a477880d242283c9b5"
+EXPECTED_PATCHED_BINARY_SHA256 = "10a03c0875f0a5301c2bf7308c0cfd7e3fb379911fd035ff8c6f54b99a0ef2f0"
 EXPECTED_EXECUTABLE = "CheatiOSShare"
-OUTPUT_SHORT_VERSION = "1.5"
-OUTPUT_BUILD_VERSION = "105"
+OUTPUT_SHORT_VERSION = "1.6"
+OUTPUT_BUILD_VERSION = "106"
 
 
 @dataclass(frozen=True)
@@ -36,37 +38,18 @@ class Patch:
 
 
 PATCHES = (
-    # ── v1.2 patches (unchanged) ──────────────────────────────────────
-    # LicenseGateStore.isChecking: mov w0, #0; ret
-    Patch("license_checking_false", 0x73234,
-          bytes.fromhex("600700d000001291"),
-          bytes.fromhex("00008052c0035fd6")),
-    # LicenseGateStore.isUnlocked: mov w0, #1; ret
-    Patch("license_unlocked_true", 0x73248,
-          bytes.fromhex("600700d000c00c91"),
-          bytes.fromhex("20008052c0035fd6")),
-    # Async bootstrap/revalidation: immediately resume without API work.
-    Patch("bootstrap_offline", 0x7325C,
-          bytes.fromhex("bd0344b2ffc300d1"),
-          bytes.fromhex("c00640f900001fd6")),
-    Patch("revalidate_offline", 0x73668,
-          bytes.fromhex("bd0344b2ffc300d1"),
-          bytes.fromhex("c00640f900001fd6")),
-    # Swap @Published storage slots: isUnlocked=true, isChecking=false.
-    Patch("published_unlocked_true", 0x75CD8,
-          bytes.fromhex("17ed43f9"),
-          bytes.fromhex("17f143f9")),
-    Patch("published_checking_false", 0x75D10,
-          bytes.fromhex("17f143f9"),
-          bytes.fromhex("17ed43f9")),
-    # Keep fixed default key, prevent UI returning to locked state.
-    Patch("change_key_disabled", 0x755B4,
-          bytes.fromhex("fa67bba9"),
-          bytes.fromhex("c0035fd6")),
-    # LicenseGateStore.keychainLoad: return Swift small-string "1" directly.
-    Patch("keychain_default_1", 0x76B14,
-          bytes.fromhex("fc6fbaa9fa6701a9f85f02a9"),
-          bytes.fromhex("200680d20120fcd2c0035fd6")),
+    # Shared obfuscated base URL storage. The original value is
+    # https://patches.cheatiosvip.net; the cPanel adapter redirects non-key
+    # PatchHub calls back there while handling api/keys/* locally.
+    Patch("api_base_url_count", 0x1CDC08,
+          bytes.fromhex("1f00000000000000"),
+          bytes.fromhex("1500000000000000")),
+    Patch("api_base_url_xor_4b", 0x1CDC18,
+          bytes.fromhex("233f3f3b387164643b2a3f28232e386528232e2a3f2224383d223b65252e3f"),
+          bytes.fromhex("233f3f3b387164642a3b2265253f2d32316533323100000000000000000000")),
+
+    # KeyEntryView starts with "1", but the user can replace it with a real
+    # cPanel key and the normal keychain/bootstrap path remains intact.
     # KeyEntryView State<String>: Swift small-string for "1".
     Patch("default_key_1", 0x80650,
           bytes.fromhex("ffe300390800fcd2ff2301a9"),
@@ -75,8 +58,6 @@ PATCHES = (
           bytes.fromhex("e8e34039"),
           bytes.fromhex("08008052")),
 
-    # ── v1.3 new patches ──────────────────────────────────────────────
-    #
     # Force registerVisitor and fetchGames to ALWAYS take the skip/init
     # path by replacing their conditional branches with unconditional ones.
     #
@@ -98,23 +79,17 @@ PATCHES = (
           bytes.fromhex("01160054"),
           bytes.fromhex("b0000014")),
 
-    # ── v1.4 new patches ──────────────────────────────────────────────
-    #
     # PatchHubService.verifyResponse(data:httpResponse:) at 0x6873C.
-    # This function validates HTTP response status codes. When the server
-    # returns 4xx for LicenseKeyService.status(), this returns false and
-    # the code falls into the error path showing "key xác thực thất bại".
-    # Patch: mov w0, #1; ret  (always return true)
+    # The cPanel compatibility response intentionally does not reproduce the
+    # old server's embedded response-signature format; JSON status is still
+    # parsed by LicenseKeyService.result(from:statusCode:).
     Patch("verifyResponse_always_true", 0x6873C,
           bytes.fromhex("fc6fbaa9fa6701a9"),
           bytes.fromhex("20008052c0035fd6")),
 
-    # ── v1.5 new patch ───────────────────────────────────────────────
-    #
     # PatchHubService.verifyAccess(licenseKey:) is async and returns Bool.
-    # Returning from its entry requires putting true in w0 and branching to
-    # the continuation stored at [x22 + 8] in x1. This bypasses the request
-    # that otherwise returns false and displays "key xác thực thất bại".
+    # The old PatchHub does not know cPanel-issued keys, so this secondary
+    # feature check resumes true after the primary key gate has authenticated.
     #   mov w0, #1
     #   ldr x1, [x22, #8]
     #   br  x1
