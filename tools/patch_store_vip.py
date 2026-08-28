@@ -79,19 +79,26 @@ PATCHES = (
 
     # ── v1.3 new patches ──────────────────────────────────────────────
     #
-    # PatchHubService device-state sentinels.
-    # registerVisitor checks global at VA 0x1001d5378 (file offset 0x1D5378).
-    # fetchGames checks global at VA 0x1001d5418 (file offset 0x1D5418).
-    # Both gate on `cmn x8, #1; b.ne skip`.  Original value 0 means skip.
-    # Force each to -1 (0xFFFFFFFFFFFFFFFF) so both functions proceed.
-    # NOTE: do NOT patch the global at 0x1CD860 — it is checked by 12
-    # other code paths and changing it causes crashes.
-    Patch("sentinel_registerVisitor", 0x1D5378,
-          bytes.fromhex("0000000000000000"),
-          bytes.fromhex("ffffffffffffffff")),
-    Patch("sentinel_fetchGames", 0x1D5418,
-          bytes.fromhex("0000000000000000"),
-          bytes.fromhex("ffffffffffffffff")),
+    # Force registerVisitor and fetchGames to ALWAYS take the skip/init
+    # path by replacing their conditional branches with unconditional ones.
+    #
+    # registerVisitor sentinel check at 0x6a3c-0x6a40:
+    #   cmn x8, #1
+    #   b.ne 0x6a50        <- if sentinel != -1, branch to init+proceed
+    # We replace b.ne with b 0x6a50 so init ALWAYS runs regardless of
+    # sentinel value.  The skip path calls 0x153f38 (device state init)
+    # then converges with the proceed path at 0x6a44.
+    Patch("registerVisitor_always_init", 0x6a40,
+          bytes.fromhex("81000054"),
+          bytes.fromhex("04000014")),
+
+    # fetchGames sentinel check at 0x6e28-0x6e2c:
+    #   cmn x8, #1
+    #   b.ne 0x70ec        <- if sentinel != -1, branch to init+proceed
+    # Same logic: always call 0x153f4c (fetchGames init) then proceed.
+    Patch("fetchGames_always_init", 0x6e2c,
+          bytes.fromhex("01160054"),
+          bytes.fromhex("b0000014")),
 )
 
 
