@@ -2,12 +2,10 @@
 """Patch the supplied CheatiOSShare IPA for default key 1, direct menu access,
 and four fallback game cards (Free Fire, Free Fire Max, CapCut Pro, Lien Quan).
 
-v1.3 changes vs v1.2:
-  - Force global PatchHubService device-state sentinel to -1 so
-    registerVisitor + fetchGames proceed even with key "1".
-  - If fetchGames still returns empty (server 403 / network),
-    inject four hardcoded RemoteGameSummary cards so the
-    GAME HO TRO section always shows the four game tiles.
+v1.4 changes vs v1.3:
+  - Patch PatchHubService.verifyResponse to always return true, so
+    LicenseKeyService.status() never falls into the error path when
+    the server returns HTTP 4xx for the key validation request.
 """
 
 from __future__ import annotations
@@ -25,8 +23,8 @@ from pathlib import Path
 EXPECTED_IPA_SHA256 = "127f911509b2dc441f78b250603838bbf7d15cdc3861d971352314e169a13c84"
 EXPECTED_BINARY_SHA256 = "8469ae1a34db849c5252f504cfa66322bacd303b861e2b42089526941548e909"
 EXPECTED_EXECUTABLE = "CheatiOSShare"
-OUTPUT_SHORT_VERSION = "1.3"
-OUTPUT_BUILD_VERSION = "103"
+OUTPUT_SHORT_VERSION = "1.4"
+OUTPUT_BUILD_VERSION = "104"
 
 
 @dataclass(frozen=True)
@@ -99,6 +97,17 @@ PATCHES = (
     Patch("fetchGames_always_init", 0x6e2c,
           bytes.fromhex("01160054"),
           bytes.fromhex("b0000014")),
+
+    # ── v1.4 new patches ──────────────────────────────────────────────
+    #
+    # PatchHubService.verifyResponse(data:httpResponse:) at 0x6873C.
+    # This function validates HTTP response status codes. When the server
+    # returns 4xx for LicenseKeyService.status(), this returns false and
+    # the code falls into the error path showing "key xác thực thất bại".
+    # Patch: mov w0, #1; ret  (always return true)
+    Patch("verifyResponse_always_true", 0x6873C,
+          bytes.fromhex("fc6fbaa9fa6701a9"),
+          bytes.fromhex("20008052c0035fd6")),
 )
 
 
