@@ -79,49 +79,16 @@ PATCHES = (
 
     # ── v1.3 new patches ──────────────────────────────────────────────
     #
-    # 1. PatchHubService global device-state sentinel (file offset 0x1CD860).
-    #    Original value is 0x0000000000000000.  registerVisitor and
-    #    fetchGames both gate on `cmn x8, #1` (== -1 check).  Force it
-    #    to 0xFFFFFFFFFFFFFFFF so both functions proceed with key "1".
+    # PatchHubService global device-state sentinel (file offset 0x1CD860).
+    # Original value is 0x0000000000000000.  registerVisitor and
+    # fetchGames both gate on `cmn x8, #1` (== -1 check).  Force it
+    # to 0xFFFFFFFFFFFFFFFF so both functions proceed with key "1".
+    # Once both succeed the server returns the real game list and the
+    # original TBZ gate at 0xDBDF8 takes the cards rendering path.
+    # We do NOT patch the TBZ because it handles empty arrays safely.
     Patch("device_state_sentinel_m1", 0x1CD860,
           bytes.fromhex("0000000000000000"),
           bytes.fromhex("ffffffffffffffff")),
-
-    # 2. GamesHomeView.loadGames empty-games gate at 0xDBDF8.
-    #    Original: TBZ w26, #0, 0xdbe08  (if isEmpty bit clear → render cards)
-    #    Patch:    B   0xdbe08             (always render cards path)
-    #    Bytes:    9a000036 → 04000014 (B +0x10 from 0xDBDF8 to 0xdbe08)
-    #    (imm26 = (0xdbe08 - 0xDBDF8) / 4 = 0x10/4 = 4)
-    Patch("games_always_render", 0xDBDF8,
-          bytes.fromhex("9a000036"),
-          bytes.fromhex("04000014")),
-
-    # 3. Patch the games array count field to force 4 when it is zero.
-    #    At 0xdbd80 the games array buffer+count are loaded:
-    #      LDP x19, x21, [x22, #0x170]
-    #    x21 points to the Array buffer header; [x21, #0x10] = count.
-    #    After fetchGames populates the array, the isEmpty check uses
-    #    a call to 0x12e208 which inspects [x21+0x10].
-    #
-    #    Instead of complex runtime injection we patch the isEmpty
-    #    CHECK function itself.  The isEmpty test is actually done by
-    #    the Swift _isEmptyArrayBuffer helper called from the loadGames
-    #    body.  We patch the TBZ at 0xDBDF8 (done above) to always
-    #    take the game-cards branch, and separately patch the
-    #    game-card rendering prologue at 0xdbe08 to gracefully handle
-    #    an empty array by falling through to the empty-content path
-    #    instead of crashing.
-    #
-    #    Actually the safest approach: if the array is empty the render
-    #    path at 0xdbe08 loads x26 from [x22+0x260] which may be stale.
-    #    So we also NOP the first instruction of the render path that
-    #    reads the game data, and instead redirect it back to the empty
-    #    content path.  This way: with a non-empty array we show cards,
-    #    with an empty array we show a safe empty-state (no crash).
-    #
-    #    The real fix is the sentinel patch above — once registerVisitor
-    #    + fetchGames succeed the server returns the real game list and
-    #    the cards render normally.
 )
 
 
