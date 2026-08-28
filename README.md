@@ -68,10 +68,12 @@ findings.
 ## Store VIP default-key build
 
 The separate `build-store-vip.yml` workflow validates the supplied decrypted ARM64
-`CheatiOSShare` IPA by SHA-256, initializes its key field to `1`, prevents the license
-gate from remaining in the loading state, opens the main menu, strips signing material,
-and uploads `Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa`. The patcher also verifies
-the exact source instructions, output instructions, bundle version, ZIP integrity,
+`CheatiOSShare` IPA by SHA-256, initializes the key and keychain result to `1`, sets the
+underlying published license state to unlocked/not-checking, and disables bootstrap,
+revalidation, and key-change paths that could call the missing-license API. It strips
+signing material and uploads
+`Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa`. The patcher also verifies the
+exact source instructions, output instructions, bundle version, ZIP integrity,
 `cryptid=0`, and the patched executable SHA-256 before the artifact is uploaded.
 
 ## Supplied-image limitation

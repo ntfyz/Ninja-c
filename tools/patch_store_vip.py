@@ -15,10 +15,10 @@ from pathlib import Path
 
 EXPECTED_IPA_SHA256 = "127f911509b2dc441f78b250603838bbf7d15cdc3861d971352314e169a13c84"
 EXPECTED_BINARY_SHA256 = "8469ae1a34db849c5252f504cfa66322bacd303b861e2b42089526941548e909"
-EXPECTED_PATCHED_BINARY_SHA256 = "df8a3c37894bcb3c86e350fa1d53829c90aa87f4c45b86f1d210783e5cbd8efb"
+EXPECTED_PATCHED_BINARY_SHA256 = "f29c04f281690af14baab73227a76f8b5a6218960a4709935b3bf4d588125b13"
 EXPECTED_EXECUTABLE = "CheatiOSShare"
-OUTPUT_SHORT_VERSION = "1.1"
-OUTPUT_BUILD_VERSION = "101"
+OUTPUT_SHORT_VERSION = "1.2"
+OUTPUT_BUILD_VERSION = "102"
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,21 @@ PATCHES = (
     Patch("license_checking_false", 0x73234, bytes.fromhex("600700d000001291"), bytes.fromhex("00008052c0035fd6")),
     # LicenseGateStore.isUnlocked: mov w0, #1; ret
     Patch("license_unlocked_true", 0x73248, bytes.fromhex("600700d000c00c91"), bytes.fromhex("20008052c0035fd6")),
+    # Async bootstrap/revalidation: immediately resume the caller without API work.
+    Patch("bootstrap_offline", 0x7325C, bytes.fromhex("bd0344b2ffc300d1"), bytes.fromhex("c00640f900001fd6")),
+    Patch("revalidate_offline", 0x73668, bytes.fromhex("bd0344b2ffc300d1"), bytes.fromhex("c00640f900001fd6")),
+    # Swap the two @Published storage slots: isUnlocked=true, isChecking=false.
+    Patch("published_unlocked_true", 0x75CD8, bytes.fromhex("17ed43f9"), bytes.fromhex("17f143f9")),
+    Patch("published_checking_false", 0x75D10, bytes.fromhex("17f143f9"), bytes.fromhex("17ed43f9")),
+    # Keep the fixed default key and prevent the UI from returning to a locked state.
+    Patch("change_key_disabled", 0x755B4, bytes.fromhex("fa67bba9"), bytes.fromhex("c0035fd6")),
+    # LicenseGateStore.keychainLoad: return Swift small-string "1" directly.
+    Patch(
+        "keychain_default_1",
+        0x76B14,
+        bytes.fromhex("fc6fbaa9fa6701a9f85f02a9"),
+        bytes.fromhex("200680d20120fcd2c0035fd6"),
+    ),
     # KeyEntryView State<String>: Swift small-string representation for "1".
     Patch(
         "default_key_1",
