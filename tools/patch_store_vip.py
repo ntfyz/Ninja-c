@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Patch the supplied CheatiOSShare IPA for default key 1, direct menu access,
-and four fallback game cards (Free Fire, Free Fire Max, CapCut Pro, Lien Quan).
+four game cards, and offline feature authorization.
 
-v1.4 changes vs v1.3:
-  - Patch PatchHubService.verifyResponse to always return true, so
-    LicenseKeyService.status() never falls into the error path when
-    the server returns HTTP 4xx for the key validation request.
+v1.5 changes vs v1.4:
+  - Return true directly from async PatchHubService.verifyAccess so opening
+    a game/tool no longer fails after the UI-level license gate was bypassed.
 """
 
 from __future__ import annotations
@@ -22,9 +21,10 @@ from pathlib import Path
 
 EXPECTED_IPA_SHA256 = "127f911509b2dc441f78b250603838bbf7d15cdc3861d971352314e169a13c84"
 EXPECTED_BINARY_SHA256 = "8469ae1a34db849c5252f504cfa66322bacd303b861e2b42089526941548e909"
+EXPECTED_PATCHED_BINARY_SHA256 = "1066e6b49c40fb832754577db8aacc60b1117244f60979a477880d242283c9b5"
 EXPECTED_EXECUTABLE = "CheatiOSShare"
-OUTPUT_SHORT_VERSION = "1.4"
-OUTPUT_BUILD_VERSION = "104"
+OUTPUT_SHORT_VERSION = "1.5"
+OUTPUT_BUILD_VERSION = "105"
 
 
 @dataclass(frozen=True)
@@ -108,6 +108,19 @@ PATCHES = (
     Patch("verifyResponse_always_true", 0x6873C,
           bytes.fromhex("fc6fbaa9fa6701a9"),
           bytes.fromhex("20008052c0035fd6")),
+
+    # ── v1.5 new patch ───────────────────────────────────────────────
+    #
+    # PatchHubService.verifyAccess(licenseKey:) is async and returns Bool.
+    # Returning from its entry requires putting true in w0 and branching to
+    # the continuation stored at [x22 + 8] in x1. This bypasses the request
+    # that otherwise returns false and displays "key xác thực thất bại".
+    #   mov w0, #1
+    #   ldr x1, [x22, #8]
+    #   br  x1
+    Patch("verifyAccess_always_true", 0x6AB4C,
+          bytes.fromhex("bd0344b2ff8300d1fd7b01a9"),
+          bytes.fromhex("20008052c10640f920001fd6")),
 )
 
 
@@ -248,6 +261,12 @@ def verify(ipa: Path) -> None:
             actual = binary[patch.offset : patch.offset + len(patch.replacement)]
             if actual != patch.replacement:
                 raise SystemExit(f"Output verification failed for {patch.name}")
+        patched_digest = sha256(binary)
+        if patched_digest != EXPECTED_PATCHED_BINARY_SHA256:
+            raise SystemExit(
+                f"Unexpected patched executable SHA256: {patched_digest}\n"
+                f"Expected: {EXPECTED_PATCHED_BINARY_SHA256}"
+            )
         if plist.get("CFBundleShortVersionString") != OUTPUT_SHORT_VERSION:
             raise SystemExit("Output short version was not updated")
         if plist.get("CFBundleVersion") != OUTPUT_BUILD_VERSION:
