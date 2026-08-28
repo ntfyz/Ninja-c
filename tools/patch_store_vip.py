@@ -79,14 +79,17 @@ PATCHES = (
 
     # ── v1.3 new patches ──────────────────────────────────────────────
     #
-    # PatchHubService global device-state sentinel (file offset 0x1CD860).
-    # Original value is 0x0000000000000000.  registerVisitor and
-    # fetchGames both gate on `cmn x8, #1` (== -1 check).  Force it
-    # to 0xFFFFFFFFFFFFFFFF so both functions proceed with key "1".
-    # Once both succeed the server returns the real game list and the
-    # original TBZ gate at 0xDBDF8 takes the cards rendering path.
-    # We do NOT patch the TBZ because it handles empty arrays safely.
-    Patch("device_state_sentinel_m1", 0x1CD860,
+    # PatchHubService device-state sentinels.
+    # registerVisitor checks global at VA 0x1001d5378 (file offset 0x1D5378).
+    # fetchGames checks global at VA 0x1001d5418 (file offset 0x1D5418).
+    # Both gate on `cmn x8, #1; b.ne skip`.  Original value 0 means skip.
+    # Force each to -1 (0xFFFFFFFFFFFFFFFF) so both functions proceed.
+    # NOTE: do NOT patch the global at 0x1CD860 — it is checked by 12
+    # other code paths and changing it causes crashes.
+    Patch("sentinel_registerVisitor", 0x1D5378,
+          bytes.fromhex("0000000000000000"),
+          bytes.fromhex("ffffffffffffffff")),
+    Patch("sentinel_fetchGames", 0x1D5418,
           bytes.fromhex("0000000000000000"),
           bytes.fromhex("ffffffffffffffff")),
 )
