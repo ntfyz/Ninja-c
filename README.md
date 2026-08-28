@@ -65,6 +65,15 @@ python tools/analyze_macho.py PATH_TO_MACHO --rva 0x437c
 See [`analysis/RVA_MAP.md`](analysis/RVA_MAP.md) for the confirmed symbols and protocol
 findings.
 
+## Store VIP default-key build
+
+The separate `build-store-vip.yml` workflow validates the supplied decrypted ARM64
+`CheatiOSShare` IPA by SHA-256, initializes its key field to `1`, prevents the license
+gate from remaining in the loading state, opens the main menu, strips signing material,
+and uploads `Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa`. The patcher also verifies
+the exact source instructions, output instructions, bundle version, ZIP integrity,
+`cryptid=0`, and the patched executable SHA-256 before the artifact is uploaded.
+
 ## Supplied-image limitation
 
 The supplied IPA has no downloaded autoplay WASM payload. It contains WAMR plus only the

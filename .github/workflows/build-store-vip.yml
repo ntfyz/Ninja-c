@@ -1,0 +1,42 @@
+name: Build Store VIP default-key-1 IPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "input/Ios_Store_VIP.ipa"
+      - "tools/patch_store_vip.py"
+      - ".github/workflows/build-store-vip.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch default key and license gate
+        run: |
+          mkdir -p dist
+          python3 tools/patch_store_vip.py input/Ios_Store_VIP.ipa \
+            --output dist/Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa
+
+      - name: Verify unsigned IPA
+        run: |
+          unzip -t dist/Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa
+          test "$(unzip -l dist/Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa | grep -c 'Payload/CheatiOSShare.app/CheatiOSShare$')" -eq 1
+          ! unzip -l dist/Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa | grep -E '(_CodeSignature|embedded.mobileprovision|SC_Info)'
+          shasum -a 256 dist/Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa | tee dist/Ios_Store_VIP_SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ios-Store-VIP-v1.1-default-key-1-unsigned-ipa
+          path: |
+            dist/Ios_Store_VIP_v1.1_default-key-1_unsigned.ipa
+            dist/Ios_Store_VIP_SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
