@@ -1,4 +1,4 @@
-name: Build Store VIP key-1 menu-fix IPA
+name: Build Store VIP key-1 menu-fix + 4-games IPA
 
 on:
   push:
@@ -19,24 +19,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Patch default key and license gate
+      - name: Patch default key, license gate, device sentinel, and game-render gate
         run: |
           mkdir -p dist
           python3 tools/patch_store_vip.py input/Ios_Store_VIP.ipa \
-            --output dist/Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa
+            --output dist/Ios_Store_VIP_v1.3_key-1_four-games_unsigned.ipa
 
       - name: Verify unsigned IPA
         run: |
-          unzip -t dist/Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa
-          test "$(unzip -l dist/Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa | grep -c 'Payload/CheatiOSShare.app/CheatiOSShare$')" -eq 1
-          ! unzip -l dist/Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa | grep -E '(_CodeSignature|embedded.mobileprovision|SC_Info)'
-          shasum -a 256 dist/Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa | tee dist/Ios_Store_VIP_SHA256SUMS.txt
+          unzip -t dist/Ios_Store_VIP_v1.3_key-1_four-games_unsigned.ipa
+          test "$(unzip -l dist/Ios_Store_VIP_v1.3_key-1_four-games_unsigned.ipa | grep -c 'Payload/CheatiOSShare.app/CheatiOSShare$')" -eq 1
+          ! unzip -l dist/Ios_Store_VIP_v1.3_key-1_four-games_unsigned.ipa | grep -E '(_CodeSignature|embedded.mobileprovision|SC_Info)'
+          shasum -a 256 dist/Ios_Store_VIP_v1.3_key-1_four-games_unsigned.ipa | tee dist/Ios_Store_VIP_SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Ios-Store-VIP-v1.2-default-key-1-menu-fix-unsigned-ipa
+          name: Ios-Store-VIP-v1.3-key-1-four-games-unsigned-ipa
           path: |
-            dist/Ios_Store_VIP_v1.2_default-key-1_menu-fix_unsigned.ipa
+            dist/Ios_Store_VIP_v1.3_key-1_four-games_unsigned.ipa
             dist/Ios_Store_VIP_SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
