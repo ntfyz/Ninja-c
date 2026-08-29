@@ -9,8 +9,8 @@ on:
       - 'input/Fluorite_8BallPool_56.28.2_2.5.1.ipa.parts.json'
       - 'ios/fluorite_keyguard.mm'
       - 'ios/FluoriteLoaderInfo.plist'
-      - 'ios/FluoriteGuardInfo.plist'
       - 'tools/ipa_parts.py'
+      - 'tools/inject_macho_dylib.py'
       - 'tools/repack_fluorite_guarded.py'
 permissions:
   contents: read
@@ -22,98 +22,82 @@ jobs:
       - uses: actions/checkout@v4
       - name: Reassemble and verify Fluorite source IPA
         run: |
-          mkdir -p build/source build/libloader.framework build/fg.framework dist
+          mkdir -p build/keyguard.framework build/verify dist
           python3 tools/ipa_parts.py join \
             input/Fluorite_8BallPool_56.28.2_2.5.1.ipa.parts.json \
             build/source.ipa
           test "$(shasum -a 256 build/source.ipa | awk '{print $1}')" = \
             "71291c75ad65a3bef6166452b5ef5ecb7fd1ac9378920f5099e5b486441a37f2"
-          python3 - <<'PY'
-          import hashlib, zipfile
-          from pathlib import Path
-          with zipfile.ZipFile('build/source.ipa') as archive:
-              names = [name for name in archive.namelist()
-                       if name.endswith('.app/Frameworks/libloader.framework/libloader')]
-              assert len(names) == 1, names
-              Path('build/source/libloader').write_bytes(archive.read(names[0]))
-              for suffix, output in (
-                  ('.app/pool', 'build/source/pool'),
-                  ('.app/fluorite_resources.tar.lz4', 'build/source/fluorite_resources.tar.lz4')):
-                  matches = [name for name in archive.namelist() if name.endswith(suffix)]
-                  assert len(matches) == 1, matches
-                  Path(output).write_bytes(archive.read(matches[0]))
-          for path in ('build/source/libloader', 'build/source/pool',
-                       'build/source/fluorite_resources.tar.lz4'):
-              data = Path(path).read_bytes()
-              print(path, len(data), hashlib.sha256(data).hexdigest())
-          PY
-      - name: Preserve original Fluorite startup guard
-        run: |
-          cp build/source/libloader build/fg.framework/fg
-          install_name_tool -id @rpath/fg.framework/fg build/fg.framework/fg
-          cp ios/FluoriteGuardInfo.plist build/fg.framework/Info.plist
-          chmod 755 build/fg.framework/fg
-          otool -D build/fg.framework/fg | grep '@rpath/fg.framework/fg'
-      - name: Build one-key KeyAuth wrapper
+      - name: Build independent key-1 KeyAuth framework
         run: |
           xcrun --sdk iphoneos clang++ -arch arm64 -std=c++17 -dynamiclib -fobjc-arc -fblocks \
-            -miphoneos-version-min=15.0 \
+            -miphoneos-version-min=11.0 \
             '-DFLUORITE_AUTH_URL="https://test.ntfyz.xyz/ninja_ios_v2/api/v1/auth/login/"' \
-            -install_name @rpath/libloader.dylib \
-            -Wl,-needed_library,build/fg.framework/fg \
+            -install_name @rpath/keyguard.framework/keyguard \
             -framework Foundation -framework Security -framework UIKit \
-            ios/fluorite_keyguard.mm -o build/libloader.framework/libloader
-          cp ios/FluoriteLoaderInfo.plist build/libloader.framework/Info.plist
-          chmod 755 build/libloader.framework/libloader
-          otool -L build/libloader.framework/libloader | grep '@rpath/fg.framework/fg'
-          python3 - <<'PY'
-          import subprocess
-          text = subprocess.check_output(['otool', '-l', 'build/libloader.framework/libloader'], text=True)
-          marker = 'name @rpath/fg.framework/fg'
-          pos = text.index(marker)
-          block = text[text.rfind('cmd ', 0, pos):pos]
-          assert 'LC_LOAD_DYLIB' in block and 'LC_REEXPORT_DYLIB' not in block, block
-          print('fluorite_guard_dependency=LC_LOAD_DYLIB')
-          PY
-      - name: Repack exact-size unsigned IPA
+            ios/fluorite_keyguard.mm -o build/keyguard.framework/keyguard
+          cp ios/FluoriteLoaderInfo.plist build/keyguard.framework/Info.plist
+          chmod 755 build/keyguard.framework/keyguard
+          otool -D build/keyguard.framework/keyguard | grep '@rpath/keyguard.framework/keyguard'
+      - name: Repack while keeping original Fluorite loader in place
         run: |
           python3 tools/repack_fluorite_guarded.py build/source.ipa \
-            --wrapper-binary build/libloader.framework/libloader \
-            --wrapper-plist ios/FluoriteLoaderInfo.plist \
-            --guard-binary build/fg.framework/fg \
-            --guard-plist ios/FluoriteGuardInfo.plist \
-            --output dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_unsigned.ipa
-      - name: Verify paths, hashes, dependency and size
+            --keyguard-binary build/keyguard.framework/keyguard \
+            --keyguard-plist ios/FluoriteLoaderInfo.plist \
+            --output dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa
+      - name: Verify loader path, dependency, hashes and exact size
         run: |
-          unzip -t dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_unsigned.ipa
+          unzip -t dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa
           python3 - <<'PY'
           import hashlib, zipfile
           from pathlib import Path
           source = Path('build/source.ipa')
-          output = Path('dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_unsigned.ipa')
+          output = Path('dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa')
           assert source.stat().st_size == output.stat().st_size == 176777963
           with zipfile.ZipFile(source) as a, zipfile.ZipFile(output) as b:
               src_app = next(n[:-len('Info.plist')] for n in a.namelist()
-                             if n.startswith('Payload/') and n.count('/') == 2 and n.endswith('.app/Info.plist'))
+                             if n.startswith('Payload/') and n.count('/') == 2
+                             and n.endswith('.app/Info.plist'))
               out_app = next(n[:-len('Info.plist')] for n in b.namelist()
-                             if n.startswith('Payload/') and n.count('/') == 2 and n.endswith('.app/Info.plist'))
-              for relative in ('pool', 'fluorite_resources.tar.lz4'):
-                  left = a.read(src_app + relative)
-                  right = b.read(out_app + relative)
-                  assert left == right
-                  print(relative, len(right), hashlib.sha256(right).hexdigest())
-              assert sum(n.endswith('.app/Frameworks/libloader.framework/libloader') for n in b.namelist()) == 1
-              assert sum(n.endswith('.app/Frameworks/fg.framework/fg') for n in b.namelist()) == 1
+                             if n.startswith('Payload/') and n.count('/') == 2
+                             and n.endswith('.app/Info.plist'))
+              loader_rel = 'Frameworks/libloader.framework/libloader'
+              source_loader = a.read(src_app + loader_rel)
+              output_loader = b.read(out_app + loader_rel)
+              assert source_loader == output_loader
+              assert b'@executable_path/Frameworks/libloader.framework/libloader' in output_loader
+              assert hashlib.sha256(output_loader).hexdigest() == \
+                  'a499172a8f61855b26b4811f75e142c27f72c1f119c00594426426bc29d284f8'
+              assert a.read(src_app + 'fluorite_resources.tar.lz4') == \
+                  b.read(out_app + 'fluorite_resources.tar.lz4')
+              Path('build/verify/pool').write_bytes(b.read(out_app + 'pool'))
+              Path('build/verify/keyguard').write_bytes(
+                  b.read(out_app + 'Frameworks/keyguard.framework/keyguard'))
+              names = b.namelist()
+              assert sum(n.endswith('.app/Frameworks/libloader.framework/libloader') for n in names) == 1
+              assert sum(n.endswith('.app/Frameworks/keyguard.framework/keyguard') for n in names) == 1
+              assert not any('.app/Frameworks/fg.framework/' in n for n in names)
               assert b.testzip() is None
           print('source_bytes', source.stat().st_size)
           print('output_bytes', output.stat().st_size)
+          print('libloader_sha256', hashlib.sha256(output_loader).hexdigest())
           PY
-          shasum -a 256 dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_unsigned.ipa | tee dist/SHA256SUMS-fluorite.txt
+          python3 - <<'PY'
+          import subprocess
+          text = subprocess.check_output(['otool', '-l', 'build/verify/pool'], text=True)
+          marker = 'name @rpath/keyguard.framework/keyguard'
+          pos = text.index(marker)
+          block = text[text.rfind('cmd ', 0, pos):pos]
+          assert 'LC_LOAD_DYLIB' in block and 'LC_REEXPORT_DYLIB' not in block, block
+          print('keyguard_dependency=LC_LOAD_DYLIB')
+          PY
+          shasum -a 256 dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa \
+            | tee dist/SHA256SUMS-fluorite-crashfix.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Fluorite-56.28.2-2.5.1-key-1-unsigned-ipa
+          name: Fluorite-56.28.2-2.5.1-key-1-crashfix-unsigned-ipa
           path: |
-            dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_unsigned.ipa
-            dist/SHA256SUMS-fluorite.txt
+            dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa
+            dist/SHA256SUMS-fluorite-crashfix.txt
           if-no-files-found: error
           retention-days: 30

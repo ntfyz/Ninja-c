@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Move the original Fluorite loader to fg.framework and add the KeyAuth wrapper."""
+"""Keep Fluorite's original loader in place and add a separate KeyAuth framework."""
 
 from __future__ import annotations
 
@@ -12,8 +12,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from inject_macho_dylib import inject_load_dylib
+
 
 SOURCE_SHA256 = "71291c75ad65a3bef6166452b5ef5ecb7fd1ac9378920f5099e5b486441a37f2"
+KEYGUARD_LOAD_PATH = "@rpath/keyguard.framework/keyguard"
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -28,7 +31,8 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def item(name: str, executable: bool = False, compression: int = zipfile.ZIP_DEFLATED) -> zipfile.ZipInfo:
+def item(name: str, executable: bool = False,
+         compression: int = zipfile.ZIP_DEFLATED) -> zipfile.ZipInfo:
     result = zipfile.ZipInfo(name)
     result.create_system = 3
     result.compress_type = compression
@@ -53,38 +57,38 @@ def add_size_padding(archive: Path, app: str, target_size: int) -> None:
             zeroes = b"\0" * (1024 * 1024)
             remaining = payload_size
             while remaining:
-                block = zeroes[: min(remaining, len(zeroes))]
+                block = zeroes[:min(remaining, len(zeroes))]
                 writer.write(block)
                 remaining -= len(block)
     if archive.stat().st_size != target_size:
         raise SystemExit(f"Exact-size padding failed: {archive.stat().st_size} != {target_size}")
 
 
-def repack(source: Path, wrapper: Path, wrapper_plist: Path, guard: Path,
-           guard_plist: Path, output: Path) -> None:
+def repack(source: Path, keyguard: Path, keyguard_plist: Path, output: Path) -> None:
     if sha256_file(source) != SOURCE_SHA256:
         raise SystemExit("Input IPA is not the supplied Fluorite 56.28.2 2.5.1 sample")
-    wrapper_data = wrapper.read_bytes()
-    guard_data = guard.read_bytes()
-    if wrapper_data[:4] != b"\xcf\xfa\xed\xfe" or guard_data[:4] != b"\xcf\xfa\xed\xfe":
-        raise SystemExit("Wrapper and guard must be thin ARM64 Mach-O binaries")
-    wrapper_info = wrapper_plist.read_bytes()
-    guard_info = guard_plist.read_bytes()
-    plistlib.loads(wrapper_info)
-    plistlib.loads(guard_info)
+    keyguard_data = keyguard.read_bytes()
+    if keyguard_data[:4] != b"\xcf\xfa\xed\xfe":
+        raise SystemExit("Keyguard must be a thin ARM64 Mach-O binary")
+    keyguard_info = keyguard_plist.read_bytes()
+    plistlib.loads(keyguard_info)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(source) as src:
         apps = [name[:-len("Info.plist")] for name in src.namelist()
-                if name.startswith("Payload/") and name.count("/") == 2 and name.endswith(".app/Info.plist")]
+                if name.startswith("Payload/") and name.count("/") == 2
+                and name.endswith(".app/Info.plist")]
         if len(apps) != 1:
             raise SystemExit(f"Expected exactly one app bundle, got {apps}")
         app = apps[0]
-        old_prefix = app + "Frameworks/libloader.framework/"
         pool_name = app + "pool"
         resources_name = app + "fluorite_resources.tar.lz4"
+        loader_name = app + "Frameworks/libloader.framework/libloader"
+        keyguard_prefix = app + "Frameworks/keyguard.framework/"
         source_pool = src.read(pool_name)
+        patched_pool = inject_load_dylib(source_pool, KEYGUARD_LOAD_PATH)
         source_resources = src.read(resources_name)
+        source_loader = src.read(loader_name)
 
         with tempfile.NamedTemporaryFile(dir=output.parent, suffix=".ipa", delete=False) as temporary:
             temp = Path(temporary.name)
@@ -93,7 +97,7 @@ def repack(source: Path, wrapper: Path, wrapper_plist: Path, guard: Path,
                                  compresslevel=9, allowZip64=True) as dst:
                 for entry in src.infolist():
                     name = entry.filename
-                    if name.startswith(old_prefix):
+                    if name == pool_name or name.startswith(keyguard_prefix):
                         continue
                     if "/_CodeSignature/" in name or name.endswith("embedded.mobileprovision"):
                         continue
@@ -103,23 +107,23 @@ def repack(source: Path, wrapper: Path, wrapper_plist: Path, guard: Path,
                         with src.open(entry) as reader, dst.open(entry, "w") as writer:
                             shutil.copyfileobj(reader, writer, 1024 * 1024)
 
-                dst.writestr(item(old_prefix + "Info.plist"), wrapper_info)
-                dst.writestr(item(old_prefix + "libloader", executable=True), wrapper_data)
-                guard_prefix = app + "Frameworks/fg.framework/"
-                dst.writestr(item(guard_prefix + "Info.plist"), guard_info)
-                dst.writestr(item(guard_prefix + "fg", executable=True), guard_data)
+                dst.writestr(item(pool_name, executable=True), patched_pool)
+                dst.writestr(item(keyguard_prefix + "Info.plist"), keyguard_info)
+                dst.writestr(item(keyguard_prefix + "keyguard", executable=True), keyguard_data)
 
             add_size_padding(temp, app, source.stat().st_size)
             with zipfile.ZipFile(temp) as built:
                 if built.testzip() is not None:
                     raise SystemExit("ZIP integrity verification failed")
-                if built.read(pool_name) != source_pool:
-                    raise SystemExit("Main pool binary changed")
+                if built.read(loader_name) != source_loader:
+                    raise SystemExit("Original Fluorite libloader changed or moved")
                 if built.read(resources_name) != source_resources:
                     raise SystemExit("fluorite_resources.tar.lz4 changed")
+                if built.read(pool_name) != patched_pool:
+                    raise SystemExit("Injected pool binary changed during repack")
                 expected = {
-                    old_prefix + "libloader",
-                    app + "Frameworks/fg.framework/fg",
+                    loader_name,
+                    keyguard_prefix + "keyguard",
                     resources_name,
                     app + ".fluorite_size_pad",
                 }
@@ -133,7 +137,9 @@ def repack(source: Path, wrapper: Path, wrapper_plist: Path, guard: Path,
     print(f"output={output}")
     print(f"size={output.stat().st_size}")
     print(f"source_size={source.stat().st_size}")
-    print(f"pool_sha256={sha256_bytes(source_pool)}")
+    print(f"pool_before_sha256={sha256_bytes(source_pool)}")
+    print(f"pool_after_sha256={sha256_bytes(patched_pool)}")
+    print(f"libloader_sha256={sha256_bytes(source_loader)}")
     print(f"fluorite_resources_sha256={sha256_bytes(source_resources)}")
     print(f"sha256={sha256_file(output)}")
 
@@ -141,14 +147,11 @@ def repack(source: Path, wrapper: Path, wrapper_plist: Path, guard: Path,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input_ipa", type=Path)
-    parser.add_argument("--wrapper-binary", type=Path, required=True)
-    parser.add_argument("--wrapper-plist", type=Path, required=True)
-    parser.add_argument("--guard-binary", type=Path, required=True)
-    parser.add_argument("--guard-plist", type=Path, required=True)
+    parser.add_argument("--keyguard-binary", type=Path, required=True)
+    parser.add_argument("--keyguard-plist", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    repack(args.input_ipa, args.wrapper_binary, args.wrapper_plist,
-           args.guard_binary, args.guard_plist, args.output)
+    repack(args.input_ipa, args.keyguard_binary, args.keyguard_plist, args.output)
     return 0
 
 
