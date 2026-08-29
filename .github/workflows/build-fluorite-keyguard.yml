@@ -1,4 +1,4 @@
-name: Build Fluorite 56.28.2 KeyAuth IPA
+name: Build Fluorite 56.28.2 Offline Auto-Key IPA
 on:
   workflow_dispatch:
   push:
@@ -28,13 +28,11 @@ jobs:
             build/source.ipa
           test "$(shasum -a 256 build/source.ipa | awk '{print $1}')" = \
             "71291c75ad65a3bef6166452b5ef5ecb7fd1ac9378920f5099e5b486441a37f2"
-      - name: Build independent key-1 KeyAuth framework
+      - name: Build offline key-1 auto-pass framework
         run: |
-          xcrun --sdk iphoneos clang++ -arch arm64 -std=c++17 -dynamiclib -fobjc-arc -fblocks \
+          xcrun --sdk iphoneos clang++ -arch arm64 -std=c++17 -dynamiclib \
             -miphoneos-version-min=11.0 \
-            '-DFLUORITE_AUTH_URL="https://test.ntfyz.xyz/ninja_ios_v2/api/v1/auth/login/"' \
             -install_name @rpath/keyguard.framework/keyguard \
-            -framework Foundation -framework Security -framework UIKit \
             ios/fluorite_keyguard.mm -o build/keyguard.framework/keyguard
           cp ios/FluoriteLoaderInfo.plist build/keyguard.framework/Info.plist
           chmod 755 build/keyguard.framework/keyguard
@@ -44,15 +42,15 @@ jobs:
           python3 tools/repack_fluorite_guarded.py build/source.ipa \
             --keyguard-binary build/keyguard.framework/keyguard \
             --keyguard-plist ios/FluoriteLoaderInfo.plist \
-            --output dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa
+            --output dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_autologin_unsigned.ipa
       - name: Verify loader path, dependency, hashes and exact size
         run: |
-          unzip -t dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa
+          unzip -t dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_autologin_unsigned.ipa
           python3 - <<'PY'
           import hashlib, zipfile
           from pathlib import Path
           source = Path('build/source.ipa')
-          output = Path('dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa')
+          output = Path('dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_autologin_unsigned.ipa')
           assert source.stat().st_size == output.stat().st_size == 176777963
           with zipfile.ZipFile(source) as a, zipfile.ZipFile(output) as b:
               src_app = next(n[:-len('Info.plist')] for n in a.namelist()
@@ -73,6 +71,9 @@ jobs:
               Path('build/verify/pool').write_bytes(b.read(out_app + 'pool'))
               Path('build/verify/keyguard').write_bytes(
                   b.read(out_app + 'Frameworks/keyguard.framework/keyguard'))
+              assert b'fluorite_auto_key' in b.read(out_app + 'Frameworks/keyguard.framework/keyguard')
+              assert b'offline-auto-pass' in b.read(out_app + 'Frameworks/keyguard.framework/keyguard')
+              assert b'https://test.ntfyz.xyz' not in b.read(out_app + 'Frameworks/keyguard.framework/keyguard')
               names = b.namelist()
               assert sum(n.endswith('.app/Frameworks/libloader.framework/libloader') for n in names) == 1
               assert sum(n.endswith('.app/Frameworks/keyguard.framework/keyguard') for n in names) == 1
@@ -91,13 +92,13 @@ jobs:
           assert 'LC_LOAD_DYLIB' in block and 'LC_REEXPORT_DYLIB' not in block, block
           print('keyguard_dependency=LC_LOAD_DYLIB')
           PY
-          shasum -a 256 dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa \
-            | tee dist/SHA256SUMS-fluorite-crashfix.txt
+          shasum -a 256 dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_autologin_unsigned.ipa \
+            | tee dist/SHA256SUMS-fluorite-autologin.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Fluorite-56.28.2-2.5.1-key-1-crashfix-unsigned-ipa
+          name: Fluorite-56.28.2-2.5.1-key-1-autologin-unsigned-ipa
           path: |
-            dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_crashfix_unsigned.ipa
-            dist/SHA256SUMS-fluorite-crashfix.txt
+            dist/Fluorite_8BallPool_56.28.2_2.5.1_key-1_autologin_unsigned.ipa
+            dist/SHA256SUMS-fluorite-autologin.txt
           if-no-files-found: error
           retention-days: 30
