@@ -1,0 +1,37 @@
+{
+  "filename": "Fluorite_8BallPool_56.28.2_2.5.1.ipa",
+  "size": 176777963,
+  "sha256": "71291c75ad65a3bef6166452b5ef5ecb7fd1ac9378920f5099e5b486441a37f2",
+  "parts": [
+    {
+      "name": "Fluorite_8BallPool_56.28.2_2.5.1.ipa.part000",
+      "size": 33554432,
+      "sha256": "9ec5caee7061885148fb984a2e32332f6cccb01c7e580e8e7af34f04895fd1b2"
+    },
+    {
+      "name": "Fluorite_8BallPool_56.28.2_2.5.1.ipa.part001",
+      "size": 33554432,
+      "sha256": "426fa7adccbbbc0059797eff5e36f0cbfc2a444632457637fd4659613c49beea"
+    },
+    {
+      "name": "Fluorite_8BallPool_56.28.2_2.5.1.ipa.part002",
+      "size": 33554432,
+      "sha256": "7205b620648a676bd226ce250a227250a72fa7b2c6da8cb452a2a52e48150fee"
+    },
+    {
+      "name": "Fluorite_8BallPool_56.28.2_2.5.1.ipa.part003",
+      "size": 33554432,
+      "sha256": "ed424b6c1d1825420ec436ae34d1b72b76e2efc9a0e2c4cf6551bc263f6522ec"
+    },
+    {
+      "name": "Fluorite_8BallPool_56.28.2_2.5.1.ipa.part004",
+      "size": 33554432,
+      "sha256": "97afe4ca2313f23f68b4bbf71556afa429dec0fb582601f76c97e78b61d4fed0"
+    },
+    {
+      "name": "Fluorite_8BallPool_56.28.2_2.5.1.ipa.part005",
+      "size": 9005803,
+      "sha256": "6d264f94cd73ebefcc40b6bbabc759dcff5d5fa668f534a9f8f7c0bfda026727"
+    }
+  ]
+}
